@@ -1,0 +1,19 @@
+steps:
+- name: 'gcr.io/kaniko-project/executor:latest'
+  args:
+  - '--dockerfile=Dockerfile.production'
+  - '--destination=gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA'
+  - '--cache=true'
+- name: 'gcr.io/cloud-builders/gcloud'
+  args:
+  - 'run'
+  - 'deploy'
+  - '$_SERVICE_NAME'
+  - '--image'
+  - 'gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA'
+  - '--region'
+  - '$_REGION'
+  - '--platform'
+  - 'managed'
+images:
+  - gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA
