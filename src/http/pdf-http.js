@@ -1,9 +1,44 @@
 const _ = require('lodash');
 const ex = require('../util/express');
+const fetch = require('node-fetch');
+const logger = require('../util/logger')(__filename);
 const pdfCore = require('../core/pdf-core');
 
-const getRender = ex.createRoute((req, res) => {
+/* Get URL to existing PDF for the given PDF
+ *
+ * Relevant on pages like ArXiv or when the URL leads to a PDF.
+ */
+async function getExistingPdfUrl(url) {
+  // PDF as indicated by file extension
+  const isPDFPattern = /\.pdf$/;
+  if (url.match(isPDFPattern)) {
+    logger.info('Recognized PDF extension of: ' + url);
+    return url;
+  }
+  // Find ArXiv PDFs
+  const arxivIdPattern = /^https{0,1}:\/\/arxiv.org\/(abs|pdf)\/(\d+\.\d+)/;
+  const arxivId = url.match(arxivIdPattern);
+  if (arxivId != null) {
+    logger.info('Found ArXiv ID: ' + arxivId + ' in ' + url);
+    return 'https://arxiv.org/pdf/' + arxivId[2];
+  }
+  // Perform a HEAD request to see if the content-type indicates a PDF
+  const headRequest = await fetch(url, {method: 'HEAD'});
+  const contentType = headRequest.headers.get('content-type');
+  if (contentType.toLowerCase().endsWith('pdf')) {
+    logger.info('Recognized PDF content-type: ' + contentType + ' in ' + url);
+    return url;
+  }
+  return null;
+}
+
+const getRender = ex.createRoute(async (req, res) => {
   const opts = getOptsFromQuery(req.query);
+  const existingPdfUrl = await getExistingPdfUrl(opts.url);
+  if (existingPdfUrl != null) {
+    return res.redirect(existingPdfUrl);
+  }
+
   return pdfCore.render(opts)
     .then((data) => {
       if (opts.attachmentName) {
@@ -14,7 +49,7 @@ const getRender = ex.createRoute((req, res) => {
     });
 });
 
-const postRender = ex.createRoute((req, res) => {
+const postRender = ex.createRoute(async (req, res) => {
   const isBodyJson = req.headers['content-type'] === 'application/json';
   if (isBodyJson) {
     const hasContent = _.isString(_.get(req.body, 'url')) || _.isString(_.get(req.body, 'html'));
@@ -31,6 +66,11 @@ const postRender = ex.createRoute((req, res) => {
   } else {
     opts = getOptsFromQuery(req.query);
     opts.html = req.body;
+  }
+
+  const existingPdfUrl = await getExistingPdfUrl(opts.url);
+  if (existingPdfUrl != null) {
+    return res.redirect(existingPdfUrl);
   }
 
   return pdfCore.render(opts)
