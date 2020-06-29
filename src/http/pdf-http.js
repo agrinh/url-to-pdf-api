@@ -4,30 +4,43 @@ const fetch = require('node-fetch');
 const logger = require('../util/logger')(__filename);
 const pdfCore = require('../core/pdf-core');
 
+
 /* Get URL to existing PDF for the given PDF
  *
  * Relevant on pages like ArXiv or when the URL leads to a PDF.
  */
-async function getExistingPdfUrl(url) {
+async function getExistingPdfUrl(raw_url) {
   // PDF as indicated by file extension
   const isPDFPattern = /\.pdf$/;
-  if (url.match(isPDFPattern)) {
-    logger.info('Recognized PDF extension of: ' + url);
-    return url;
+  if (raw_url.match(isPDFPattern)) {
+    logger.info('Recognized PDF extension of: ' + raw_url);
+    return raw_url;
   }
-  // Find ArXiv PDFs
-  const arxivIdPattern = /^https{0,1}:\/\/arxiv.org\/(abs|pdf)\/(\d+\.\d+)/;
-  const arxivId = url.match(arxivIdPattern);
-  if (arxivId != null) {
-    logger.info('Found ArXiv ID: ' + arxivId + ' in ' + url);
-    return 'https://arxiv.org/pdf/' + arxivId[2];
+  const url = new URL(raw_url);
+  switch (url.hostname) {
+    case 'arxiv.org':  // Find ArXiv PDFs
+      const arxivIdPattern = /^\/(abs|pdf)\/(\d+\.\d+)/;
+      const arxivId = url.pathname.match(arxivIdPattern);
+      if (arxivId != null) {
+        logger.info('Found ArXiv ID: ' + arxivId + ' in ' + raw_url);
+        return 'https://arxiv.org/pdf/' + arxivId[2];
+      }
+      break;
+    case 'openreview.net':  // Find OpenReview PDFs
+      if (url.pathname == '/forum' || url.pathname == '/pdf') {
+        url.pathname = '/pdf';
+        logger.info('Found OpenReview: ' + url.search.toString() + ' in ' + raw_url);
+        return url.toString();
+      }
+      break;
   }
+
   // Perform a HEAD request to see if the content-type indicates a PDF
-  const headRequest = await fetch(url, {method: 'HEAD'});
+  const headRequest = await fetch(raw_url, {method: 'HEAD'});
   const contentType = headRequest.headers.get('content-type');
   if (contentType.toLowerCase().endsWith('pdf')) {
-    logger.info('Recognized PDF content-type: ' + contentType + ' in ' + url);
-    return url;
+    logger.info('Recognized PDF content-type: ' + contentType + ' in ' + raw_url);
+    return raw_url;
   }
   return null;
 }
